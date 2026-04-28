@@ -30,15 +30,23 @@ app.get('/api/contacts', auth, async (req, res) => {
 
 app.patch('/api/contacts/:id', auth, async (req, res) => {
   const { id } = req.params;
-  const { status, notes } = req.body;
+  const { status, notes, wa_sent, wa_replied, msg_sent, msg_replied, ig_sent, ig_replied, email_sent, email_replied } = req.body;
   try {
     await pool.query(`
       UPDATE contacts SET
         status = COALESCE($1, status),
         notes = COALESCE($2, notes),
+        wa_sent = COALESCE($3, wa_sent),
+        wa_replied = COALESCE($4, wa_replied),
+        msg_sent = COALESCE($5, msg_sent),
+        msg_replied = COALESCE($6, msg_replied),
+        ig_sent = COALESCE($7, ig_sent),
+        ig_replied = COALESCE($8, ig_replied),
+        email_sent = COALESCE($9, email_sent),
+        email_replied = COALESCE($10, email_replied),
         last_message_at = NOW()
-      WHERE id = $3
-    `, [status, notes, id]);
+      WHERE id = $11
+    `, [status, notes, wa_sent, wa_replied, msg_sent, msg_replied, ig_sent, ig_replied, email_sent, email_replied, id]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
