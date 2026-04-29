@@ -30,7 +30,7 @@ app.get('/api/contacts', auth, async (req, res) => {
 
 app.patch('/api/contacts/:id', auth, async (req, res) => {
   const { id } = req.params;
-  const { status, notes, wa_sent, wa_replied, msg_sent, msg_replied, ig_sent, ig_replied, email_sent, email_replied } = req.body;
+  const { status, notes, wa_sent, wa_replied, wa_not_exist, sms_sent, sms_replied, sms_not_exist, msg_sent, msg_replied, msg_not_exist, ig_sent, ig_replied, ig_not_exist, email_sent, email_replied, email_not_exist } = req.body;
   try {
     await pool.query(`
       UPDATE contacts SET
@@ -38,15 +38,32 @@ app.patch('/api/contacts/:id', auth, async (req, res) => {
         notes = COALESCE($2, notes),
         wa_sent = COALESCE($3, wa_sent),
         wa_replied = COALESCE($4, wa_replied),
-        msg_sent = COALESCE($5, msg_sent),
-        msg_replied = COALESCE($6, msg_replied),
-        ig_sent = COALESCE($7, ig_sent),
-        ig_replied = COALESCE($8, ig_replied),
-        email_sent = COALESCE($9, email_sent),
-        email_replied = COALESCE($10, email_replied),
+        wa_not_exist = COALESCE($5, wa_not_exist),
+        sms_sent = COALESCE($6, sms_sent),
+        sms_replied = COALESCE($7, sms_replied),
+        sms_not_exist = COALESCE($8, sms_not_exist),
+        msg_sent = COALESCE($9, msg_sent),
+        msg_replied = COALESCE($10, msg_replied),
+        msg_not_exist = COALESCE($11, msg_not_exist),
+        ig_sent = COALESCE($12, ig_sent),
+        ig_replied = COALESCE($13, ig_replied),
+        ig_not_exist = COALESCE($14, ig_not_exist),
+        email_sent = COALESCE($15, email_sent),
+        email_replied = COALESCE($16, email_replied),
+        email_not_exist = COALESCE($17, email_not_exist),
         last_message_at = NOW()
-      WHERE id = $11
-    `, [status, notes, wa_sent, wa_replied, msg_sent, msg_replied, ig_sent, ig_replied, email_sent, email_replied, id]);
+      WHERE id = $18
+    `, [status, notes, wa_sent, wa_replied, wa_not_exist, sms_sent, sms_replied, sms_not_exist, msg_sent, msg_replied, msg_not_exist, ig_sent, ig_replied, ig_not_exist, email_sent, email_replied, email_not_exist, id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/contacts/:id', auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM contacts WHERE id = $1', [id]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
