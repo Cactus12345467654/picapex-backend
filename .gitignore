@@ -1,0 +1,7 @@
+node_modules/
+.local-data/
+.test-data*/
+.env
+.env.*
+.local-*.cjs
+warming.test.js
