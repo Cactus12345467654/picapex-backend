@@ -87,9 +87,23 @@ module.exports = function(pool, auth) {
   res.json(saved);
  }));
  router.post('/:id/notes',run(async(req,res)=>{
-  if(!req.body || Object.keys(req.body).some(k=>k!=='body') || typeof req.body.body!=='string'||!req.body.body.trim()||req.body.body.length>10000)fail('Norādi piezīmi (līdz 10 000 rakstzīmēm).');
-  const {rows}=await pool.query('INSERT INTO warming_notes (restaurant_id,body) SELECT id,$2 FROM warming_restaurants WHERE id=$1 RETURNING id,body,created_at',[req.params.id,req.body.body.trim()]);
-  if(!rows.length)fail('Restorāns nav atrasts.',404);res.status(201).json(rows[0]);
+  if(!req.body || Object.keys(req.body).some(k=>!['body','request_id'].includes(k)) || typeof req.body.body!=='string'||!req.body.body.trim()||req.body.body.length>10000)fail('Norādi piezīmi (līdz 10 000 rakstzīmēm).');
+  const requestId=req.body.request_id;
+  if(requestId!==undefined&&(typeof requestId!=='string'||! /^[a-zA-Z0-9_-]{8,100}$/.test(requestId)))fail('Nederīgs request_id.');
+  const result=await transaction(async db=>{
+   await db.query('LOCK TABLE warming_notes IN SHARE ROW EXCLUSIVE MODE');
+   if(requestId) {
+    const previous=(await db.query('SELECT * FROM warming_notes WHERE request_id=$1',[requestId])).rows[0];
+    if(previous) {
+     if(previous.restaurant_id!==Number(req.params.id)||previous.body!==req.body.body.trim())fail('request_id jau izmantots citai piezīmei.',409);
+     return {existing:true,note:previous};
+    }
+   }
+   const {rows}=await db.query('INSERT INTO warming_notes (restaurant_id,body,request_id) SELECT id,$2,$3 FROM warming_restaurants WHERE id=$1 RETURNING id,body,created_at',[req.params.id,req.body.body.trim(),requestId||null]);
+   if(!rows.length)fail('Restorāns nav atrasts.',404);
+   return {existing:false,note:rows[0]};
+  });
+  res.status(result.existing?200:201).json(result.note);
  }));
  router.post('/:id/interactions',run(async(req,res)=>{
   const data=validate(req.body,false,['kind','occurred_on','summary','contact_person','contact_role','interest_status','next_action','next_action_date','request_id']);

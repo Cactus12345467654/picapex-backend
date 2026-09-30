@@ -9,3 +9,10 @@ services:
         sync: false
       - key: API_KEY
         sync: false
+      # Set all three together after deploying. Leave API_KEY unchanged.
+      - key: MCP_PUBLIC_URL
+        sync: false
+      - key: MCP_CLIENT_SECRET
+        sync: false
+      - key: MCP_LOGIN_SECRET_HASH
+        sync: false

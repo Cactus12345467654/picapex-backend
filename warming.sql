@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS warming_notes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS warming_notes_restaurant_idx ON warming_notes(restaurant_id, created_at, id);
+ALTER TABLE warming_notes ADD COLUMN IF NOT EXISTS request_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS warming_notes_request_id_idx ON warming_notes(request_id) WHERE request_id IS NOT NULL;
 
 
 ALTER TABLE warming_restaurants ADD COLUMN IF NOT EXISTS contact_role TEXT NOT NULL DEFAULT '' CHECK (contact_role IN ('','owner','manager','salesperson','other'));

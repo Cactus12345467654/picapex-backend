@@ -18,6 +18,7 @@ function auth(req, res, next) {
 }
 
 app.use('/api/warming-restaurants', require('./warming')(pool, auth));
+require('./mcp')(app, pool);
 app.get('/api/contacts', auth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM contacts ORDER BY id');
@@ -69,7 +70,7 @@ app.delete('/api/contacts/:id', auth, async (req, res) => {
   }
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', app: 'Picapex CRM' }));
+app.get('/', (req, res) => res.json({ status: 'ok', app: 'Picapex CRM', release: 'mcp-v1', mcp: process.env.MCP_PUBLIC_URL ? 'enabled' : 'disabled' }));
 
 const PORT = process.env.PORT || 3000;
 migrate().then(() => app.listen(PORT, '0.0.0.0', () => console.log('Server running on port ' + PORT))).catch(e => { console.error(e); process.exit(1); });

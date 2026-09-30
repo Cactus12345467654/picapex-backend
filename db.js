@@ -7,5 +7,6 @@ const pool = new Pool({
 });
 async function migrate() {
   await pool.query(fs.readFileSync(path.join(__dirname, 'warming.sql'), 'utf8'));
+  await pool.query(fs.readFileSync(path.join(__dirname, 'mcp.sql'), 'utf8'));
 }
 module.exports = { pool, migrate };
