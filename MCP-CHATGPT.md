@@ -77,3 +77,18 @@ Vecāka datuma vizīte papildina vēsturi, bet nepārraksta jaunākās saziņas 
 Nomainot `MCP_LOGIN_SECRET_HASH` vai `MCP_CLIENT_SECRET`, iepriekšējie MCP tokeni kļūst nederīgi; CRM `API_KEY` paliek spēkā. Ja maini klienta secret, atjaunini to arī ChatGPT. `/oauth/revoke` atsauc konkrētu OAuth piekļuves saimi. Paroles, tokenus un ģenerēto JSON failu nepublicē GitHub.
 
 `npm test` izmanto tikai izolētu PGlite PostgreSQL datubāzi atmiņā un localhost serveri. Aptver OAuth pozitīvos/negatīvos scenārijus, PKCE un kodu atkārtošanu, datumu robežas/DST, visas MCP darbības, neskaidras izvēles, dublikātus, vēsturi, parastā CRM atslēgas saglabāšanu un piekļuves izolāciju. Dzīvajā CRM testu ieraksti netiek veidoti.
+
+## Autorizācijas formas diagnostika
+
+Pārlūka formas regresijas pārbaude: palaid `node test/browser-oauth.cjs`, atver `http://127.0.0.1:3197/start`, ievadi tikai šī izolētā testa paroli `local-browser-test` un iesniedz formu. Veiksmīgs rezultāts: `Authorization accepted. PKCE token exchange: PASS`. Šis tests izmanto datubāzi atmiņā, ģenerē savas pagaidu atslēgas un pārtver callback lokāli; tas neizmanto dzīvo CRM vai tā paroles. Pēc pārbaudes apturi procesu ar Ctrl+C.
+
+Autorizācijas HTML atbildei nepieciešams `Referrer-Policy: strict-origin`. Iepriekšējais `no-referrer` lika pārlūka HTML formai nosūtīt `Origin: null`; izcelsmes pārbaude noraidīja pieprasījumu pirms formas tokena un paroles pārbaudes. `strict-origin` saglabā pareizo Origin, bet Referer neatklāj OAuth ceļu vai vaicājuma parametrus. Svešs Origin un `Origin: null` joprojām tiek noraidīti.
+
+403 atbildes `reason` un servera `mcp_oauth_denied` žurnāla ieraksts satur tikai fiksētu iemesla kodu, nekad paroli, tokenu vai pieprasījuma datus:
+
+- `origin_mismatch`: formas pieprasījuma izcelsme neatbilst backend adresei.
+- `authorization_form_invalid_or_expired`: formas tokens nav derīgs, ir izmantots, beidzies vai izdots ar iepriekšējo konfigurāciju; sāc jaunu pieslēgšanu no ChatGPT.
+- `invalid_password_input`: paroles lauka formāts nav pieņemams.
+- `password_mismatch`: paroles pārbaude pret konfigurēto hash neizdevās.
+
+Šim labojumam Render vides mainīgie un paroles nav jāmaina; jāpublicē jaunā backend versija un jāatver jauna autorizācijas forma.

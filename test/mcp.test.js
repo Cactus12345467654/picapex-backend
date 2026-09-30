@@ -43,6 +43,7 @@ test('OAuth and SDK end-to-end, isolated in-memory PostgreSQL; no production req
   const args={client_id:clientId,redirect_uri:redirect,response_type:'code',resource,scope:'warming:read warming:write',state:'state-123',code_challenge:challenge,code_challenge_method:'S256',...overrides};
   const response=await fetch(base+'/oauth/authorize?'+new URLSearchParams(args));
   if(response.status!==200) return {response,verifier};
+  assert.equal(response.headers.get('referrer-policy'),'strict-origin','Native HTML form POST must retain Origin without leaking OAuth query parameters.');
   const html=await response.text();
   const nonce=/name="nonce" value="([^"]+)"/.exec(html)[1];
   return {response,verifier,nonce};
@@ -50,7 +51,7 @@ test('OAuth and SDK end-to-end, isolated in-memory PostgreSQL; no production req
  async function exchange(code,verifier,extra={}) {return form('/oauth/token',{client_id:clientId,client_secret:env.MCP_CLIENT_SECRET,grant_type:'authorization_code',resource,redirect_uri:redirect,code,code_verifier:verifier,...extra});}
  async function login() {
   const a=await issueCode();
-  const approval=await form('/oauth/authorize',{nonce:a.nonce,password});
+  const approval=await form('/oauth/authorize',{nonce:a.nonce,password},{Origin:base});
   assert.equal(approval.status,303);
   const location=new URL(approval.headers.get('location'));
   assert.equal(location.searchParams.get('iss'),base);assert.equal(location.searchParams.get('state'),'state-123');
@@ -66,8 +67,22 @@ test('OAuth and SDK end-to-end, isolated in-memory PostgreSQL; no production req
  assert.equal((await issueCode({resource:base+'/api/contacts'})).response.status,400);
  assert.equal((await issueCode({scope:'contacts:write'})).response.status,400);
  assert.equal((await issueCode({scope:'warming:read'})).response.status,400);
- const rejected=await issueCode();assert.equal((await form('/oauth/authorize',{nonce:rejected.nonce,password:legacyKey})).status,403);
- assert.equal((await form('/oauth/authorize',{nonce:rejected.nonce,password})).status,403);
+ const originProbe=await issueCode();
+ for(const origin of ['null','https://evil.example']) {
+  const blocked=await form('/oauth/authorize',{nonce:originProbe.nonce,password},{Origin:origin});
+  assert.equal(blocked.status,403);assert.equal((await blocked.json()).reason,'origin_mismatch');
+ }
+ // Origin rejection happens before consuming the form or verifying the password.
+ assert.equal((await form('/oauth/authorize',{nonce:originProbe.nonce,password},{Origin:base})).status,303);
+ const rejected=await issueCode();
+ const wrongPassword=await form('/oauth/authorize',{nonce:rejected.nonce,password:legacyKey},{Origin:base});
+ assert.equal(wrongPassword.status,403);assert.equal((await wrongPassword.json()).reason,'password_mismatch');
+ const reused=await form('/oauth/authorize',{nonce:rejected.nonce,password},{Origin:base});
+ assert.equal(reused.status,403);assert.equal((await reused.json()).reason,'authorization_form_invalid_or_expired');
+ const expired=await issueCode();
+ await db.query("UPDATE mcp_oauth_records SET expires_at=NOW()-interval '1 second' WHERE key=$1",[crypto.createHash('sha256').update(expired.nonce).digest('hex')]);
+ const timedOut=await form('/oauth/authorize',{nonce:expired.nonce,password},{Origin:base});
+ assert.equal(timedOut.status,403);assert.equal((await timedOut.json()).reason,'authorization_form_invalid_or_expired');
  const wrongPKCE=await login();assert.equal((await exchange(wrongPKCE.code,'A'.repeat(43))).status,400);
  const valid=await login();
  assert.equal((await exchange(valid.code,valid.verifier,{client_secret:'incorrect'})).status,401);

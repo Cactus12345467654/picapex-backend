@@ -30,7 +30,9 @@ function mountAuth(app,pool,config) {
  app.get(['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'],(req,res)=>res.json({resource,authorization_servers:[base],scopes_supported:scope.split(' '),bearer_methods_supported:['header']}));
  app.get('/.well-known/oauth-authorization-server',(req,res)=>res.json({issuer:base,authorization_endpoint:base+'/oauth/authorize',token_endpoint:base+'/oauth/token',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['client_secret_basic','client_secret_post'],scopes_supported:scope.split(' '),authorization_response_iss_parameter_supported:true}));
  const oauth=express.Router();
- oauth.use((req,res,next)=>{res.set({'Cache-Control':'no-store','Pragma':'no-cache','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});next();});
+ // no-referrer makes native browser form POSTs send Origin: null. strict-origin
+ // preserves Origin validation without leaking OAuth query parameters in Referer.
+ oauth.use((req,res,next)=>{res.set({'Cache-Control':'no-store','Pragma':'no-cache','Referrer-Policy':'strict-origin','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});next();});
  // Shared process-wide cap is conservative behind proxies and does not trust forged forwarding headers.
  oauth.use(rateLimit({windowMs:60000,limit:60,keyGenerator:()=> 'oauth',standardHeaders:'draft-8',legacyHeaders:false}));
  oauth.use(express.urlencoded({extended:false,limit:'8kb'}));
@@ -44,12 +46,18 @@ function mountAuth(app,pool,config) {
   res.type('html').send(`<!doctype html><html lang="lv"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Picapex CRM — ChatGPT</title><style>body{font:18px system-ui;max-width:560px;margin:60px auto;padding:24px}input,button{font:inherit;padding:12px;box-sizing:border-box;width:100%;margin:12px 0}button{background:#184c3a;color:white;border:0;border-radius:8px}</style><h1>Savienot Picapex CRM</h1><p>Atļaut ChatGPT meklēt un pievienot restorānus, papildināt kontaktinformāciju un saglabāt vizītes, piezīmes un nākamās darbības tikai sadaļā <strong>Klienti sildīšanai</strong>.</p><p>Piekļuve citām CRM sadaļām netiek piešķirta.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="nonce" value="${nonce}"><label>MCP pieslēguma parole<input type="password" name="password" autocomplete="current-password" required maxlength="200"></label><button>Atļaut piekļuvi</button></form><p>Izmanto atsevišķo MCP paroli.</p></html>`);
  }));
  oauth.post('/authorize',run(async(req,res)=>{
-  if(req.headers.origin&&req.headers.origin!==base) return error(res,'access_denied',403);
+  const denied=reason=>{
+   // Fixed reason codes only: never log passwords, nonces, request bodies or URLs.
+   console.warn(JSON.stringify({event:'mcp_oauth_denied',reason}));
+   return res.status(403).json({error:'access_denied',reason});
+  };
+  if(req.headers.origin&&req.headers.origin!==base) return denied('origin_mismatch');
   const approval=await consume(req.body.nonce,'approval');
-  if(!approval||typeof req.body.password!=='string'||req.body.password.length>200) return error(res,'access_denied',403);
+  if(!approval) return denied('authorization_form_invalid_or_expired');
+  if(typeof req.body.password!=='string'||req.body.password.length>200) return denied('invalid_password_input');
   const [salt,expected]=loginHash.split(':');
   const actual=await scrypt(req.body.password,salt,64);
-  if(!crypto.timingSafeEqual(actual,Buffer.from(expected,'hex'))) return error(res,'access_denied',403);
+  if(!crypto.timingSafeEqual(actual,Buffer.from(expected,'hex'))) return denied('password_mismatch');
   const code=random(); await put(code,'code',approval,120);
   const redirect=new URL(approval.redirect); redirect.searchParams.set('code',code); redirect.searchParams.set('state',approval.state); redirect.searchParams.set('iss',base);
   res.redirect(303,redirect.toString());
